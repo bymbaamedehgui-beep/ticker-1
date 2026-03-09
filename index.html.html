@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GLOBAL INTELLIGENCE FEED</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --green: #00FF41; --cyan: #00FFFF; --magenta: #FF00FF;
+    --amber: #FFB800; --red: #FF3131; --bg: #000;
+    --row-border: rgba(0,255,65,0.15);
+    --panel-bg: rgba(0,10,0,0.97);
+  }
+  html, body { width:100%; height:100%; overflow:hidden; background:var(--bg); }
+
+  body::after {
+    content:''; position:fixed; inset:0; pointer-events:none; z-index:100;
+    animation: flicker 8s infinite;
+  }
+  @keyframes flicker {
+    0%,19.9%,21%,62.9%,64%,100%{opacity:1} 20%,20.9%{opacity:0.92} 63%,63.9%{opacity:0.88}
+  }
+  body::before {
+    content:''; position:fixed; inset:0; pointer-events:none; z-index:99;
+    background: repeating-linear-gradient(to bottom, transparent 0px, transparent 3px, rgba(0,0,0,0.18) 3px, rgba(0,0,0,0.18) 4px);
+  }
+  #screen {
+    width:100vw; height:100vh; display:flex; flex-direction:column; position:relative;
+  }
+  #screen::after {
+    content:''; position:fixed; inset:0; pointer-events:none; z-index:98;
+    background: radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.7) 100%);
+  }
+  .ticker-row {
+    flex:1; display:flex; align-items:center; overflow:hidden;
+    border-bottom:1px solid var(--row-border); position:relative; min-height:0;
+  }
+  .ticker-row:first-child { border-top:1px solid var(--row-border); }
+  .ticker-row.green   { color:var(--green);   text-shadow:0 0 6px rgba(0,255,65,.6); }
+  .ticker-row.cyan    { color:var(--cyan);    text-shadow:0 0 8px var(--cyan); }
+  .ticker-row.magenta { color:var(--magenta); text-shadow:0 0 8px var(--magenta); }
+  .ticker-row.amber   { color:var(--amber);   text-shadow:0 0 6px var(--amber); }
+  .ticker-row.red     { color:var(--red);     text-shadow:0 0 8px var(--red); }
+  .ticker-row.featured {
+    color:#fff; flex:1.8;
+    background:rgba(0,255,65,0.04);
+    border-top:1px solid rgba(0,255,65,0.4);
+    border-bottom:1px solid rgba(0,255,65,0.4);
+    text-shadow:0 0 12px var(--green), 0 0 24px rgba(0,255,65,0.4);
+  }
+  .ticker-track {
+    display:flex; white-space:nowrap; will-change:transform;
+    font-family:'Courier New',Courier,monospace; font-weight:bold;
+    letter-spacing:0.05em; line-height:1;
+  }
+  .ticker-item { padding:0 2.5em; display:inline-block; }
+  .sep { opacity:.4; margin:0 .3em; }
+  .glitch-char { display:inline-block; animation:glitch-anim .1s steps(1) forwards; }
+  @keyframes glitch-anim {
+    0%  {transform:translate(0,0) skewX(0deg);opacity:1}
+    25% {transform:translate(-2px,1px) skewX(-5deg);opacity:.7;color:var(--cyan)}
+    50% {transform:translate(2px,-1px) skewX(5deg);opacity:.9;color:var(--magenta)}
+    75% {transform:translate(-1px,0);opacity:.8}
+    100%{transform:translate(0,0);opacity:1}
+  }
+  .row-label {
+    position:absolute; left:6px; font-family:'Courier New',monospace;
+    font-size:8px; opacity:.25; letter-spacing:.15em; z-index:10;
+    user-select:none; pointer-events:none;
+  }
+  body.paused .ticker-track { animation-play-state:paused !important; }
+
+  #clock {
+    position:fixed; top:12px; right:18px; z-index:200; user-select:none;
+    font-family:'Courier New',monospace; font-size:clamp(11px,1.4vw,18px);
+    color:var(--green); text-shadow:0 0 10px var(--green); letter-spacing:.12em;
+  }
+  #clock .date-line { font-size:.72em; opacity:.65; text-align:right; }
+
+  #pause-indicator {
+    position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
+    font-family:'Courier New',monospace; font-size:clamp(24px,5vw,64px);
+    color:var(--green); text-shadow:0 0 30px var(--green);
+    letter-spacing:.3em; opacity:0; pointer-events:none; z-index:300; transition:opacity .3s;
+  }
+  #pause-indicator.visible { opacity:1; }
+
+  #settings-btn {
+    position:fixed; bottom:16px; right:16px; z-index:500;
+    background:rgba(0,255,65,0.08); border:1px solid rgba(0,255,65,0.4);
+    color:var(--green); font-family:'Courier New',monospace; font-size:13px;
+    padding:8px 14px; cursor:pointer; letter-spacing:.12em;
+    text-shadow:0 0 8px var(--green); transition:background .2s, box-shadow .2s;
+  }
+  #settings-btn:hover { background:rgba(0,255,65,0.18); box-shadow:0 0 16px rgba(0,255,65,0.3); }
+
+  #panel-overlay {
+    position:fixed; inset:0; background:rgba(0,0,0,0.75);
+    z-index:600; display:none; align-items:center; justify-content:center;
+  }
+  #panel-overlay.open { display:flex; }
+
+  #panel {
+    background:var(--panel-bg); border:1px solid rgba(0,255,65,0.35);
+    box-shadow:0 0 40px rgba(0,255,65,0.15); width:min(680px,96vw);
+    max-height:90vh; overflow-y:auto; font-family:'Courier New',monospace;
+    color:var(--green); padding:24px 28px;
+    scrollbar-width:thin; scrollbar-color:rgba(0,255,65,.3) transparent;
+  }
+  #panel h2 {
+    font-size:15px; letter-spacing:.25em; border-bottom:1px solid rgba(0,255,65,.2);
+    padding-bottom:10px; margin-bottom:20px; text-shadow:0 0 10px var(--green);
+  }
+  #panel h3 { font-size:11px; letter-spacing:.2em; opacity:.6; margin:20px 0 10px; }
+
+  .speed-block { margin-bottom:14px; }
+  .speed-block label {
+    display:flex; align-items:center; justify-content:space-between;
+    font-size:12px; letter-spacing:.1em; margin-bottom:6px;
+  }
+  .speed-val {
+    background:rgba(0,255,65,.08); border:1px solid rgba(0,255,65,.25);
+    color:var(--green); font-family:'Courier New',monospace; font-size:12px;
+    padding:2px 8px; width:64px; text-align:center;
+  }
+  input[type=range] {
+    width:100%; height:4px; appearance:none; background:rgba(0,255,65,.15);
+    outline:none; cursor:pointer; border-radius:2px;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    appearance:none; width:14px; height:14px; border-radius:50%;
+    background:var(--green); box-shadow:0 0 8px var(--green); cursor:pointer;
+  }
+  input[type=range]::-moz-range-thumb {
+    width:14px; height:14px; border-radius:50%; border:none;
+    background:var(--green); box-shadow:0 0 8px var(--green);
+  }
+
+  .row-speeds { display:flex; flex-direction:column; gap:8px; }
+  .row-speed-item {
+    display:grid; grid-template-columns:1fr auto; align-items:center; gap:12px; font-size:12px;
+  }
+  .row-speed-item span { opacity:.8; letter-spacing:.08em; }
+  .speed-select {
+    background:rgba(0,255,65,.07); border:1px solid rgba(0,255,65,.25);
+    color:var(--green); font-family:'Courier New',monospace; font-size:11px;
+    padding:4px 8px; cursor:pointer; outline:none; appearance:none;
+    text-align:center; width:120px;
+  }
+  .speed-select option { background:#001a00; }
+
+  .row-text-item {
+    display:flex; flex-direction:column; gap:6px; margin-bottom:14px;
+    border:1px solid rgba(0,255,65,.1); padding:12px; position:relative;
+  }
+  .row-title { font-size:11px; letter-spacing:.15em; opacity:.6; margin-bottom:4px; }
+  .text-input-row { display:flex; gap:8px; align-items:center; }
+  .text-input-row input {
+    flex:1; background:rgba(0,255,65,.05); border:1px solid rgba(0,255,65,.2);
+    color:var(--green); font-family:'Courier New',monospace; font-size:12px;
+    padding:6px 10px; outline:none;
+  }
+  .text-input-row input:focus { border-color:rgba(0,255,65,.6); }
+  .text-input-row input::placeholder { color:rgba(0,255,65,.3); }
+  .btn-add {
+    background:rgba(0,255,65,.12); border:1px solid rgba(0,255,65,.4);
+    color:var(--green); font-family:'Courier New',monospace; font-size:11px;
+    padding:6px 12px; cursor:pointer; letter-spacing:.1em; white-space:nowrap;
+    transition:background .15s;
+  }
+  .btn-add:hover { background:rgba(0,255,65,.25); }
+  .tag-list { display:flex; flex-wrap:wrap; gap:5px; }
+  .tag {
+    background:rgba(0,255,65,.07); border:1px solid rgba(0,255,65,.2);
+    font-size:11px; padding:3px 8px; display:flex; align-items:center; gap:6px;
+    max-width:100%; word-break:break-all;
+  }
+  .tag-del {
+    cursor:pointer; opacity:.5; font-size:13px; line-height:1;
+    transition:opacity .15s; flex-shrink:0;
+  }
+  .tag-del:hover { opacity:1; color:var(--red); }
+
+  .panel-footer {
+    display:flex; gap:12px; margin-top:24px; padding-top:16px;
+    border-top:1px solid rgba(0,255,65,.15);
+  }
+  .btn-apply {
+    flex:1; background:rgba(0,255,65,.15); border:1px solid rgba(0,255,65,.5);
+    color:var(--green); font-family:'Courier New',monospace; font-size:13px;
+    padding:10px; cursor:pointer; letter-spacing:.18em;
+    text-shadow:0 0 8px var(--green); transition:background .2s;
+  }
+  .btn-apply:hover { background:rgba(0,255,65,.28); }
+  .btn-close {
+    background:transparent; border:1px solid rgba(0,255,65,.2);
+    color:rgba(0,255,65,.5); font-family:'Courier New',monospace; font-size:13px;
+    padding:10px 20px; cursor:pointer; letter-spacing:.1em; transition:all .2s;
+  }
+  .btn-close:hover { border-color:rgba(0,255,65,.5); color:var(--green); }
+
+  ::-webkit-scrollbar { width:6px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:rgba(0,255,65,.25); }
+</style>
+</head>
+<body>
+
+<div id="clock">
+  <div id="time-display">00:00:00</div>
+  <div class="date-line" id="date-display"></div>
+</div>
+<div id="pause-indicator">[ PAUSED ]</div>
+<div id="screen"></div>
+<button id="settings-btn">⚙ ТОХИРГОО</button>
+
+<div id="panel-overlay">
+  <div id="panel">
+    <h2>⚙ ТОХИРГОО / SETTINGS</h2>
+
+    <h3>► ЕРӨНХИЙ ХУРДНЫ ХЭМЖҮҮР — НИЙТ УРСГАЛД НӨЛӨӨЛНӨ</h3>
+
+    <div class="speed-block">
+      <label>
+        <span>🐢 УДААН (SLOW) — их текст, арт маркетийн мөрүүд</span>
+        <input class="speed-val" id="val-slow" value="72s" readonly>
+      </label>
+      <input type="range" id="slider-slow" min="20" max="150" value="72">
+    </div>
+    <div class="speed-block">
+      <label>
+        <span>⚡ ДУНД (MEDIUM) — мэдээний мөрүүд</span>
+        <input class="speed-val" id="val-medium" value="42s" readonly>
+      </label>
+      <input type="range" id="slider-medium" min="10" max="90" value="42">
+    </div>
+    <div class="speed-block">
+      <label>
+        <span>🔥 ХУРДАН (FAST) — онцлох мөр</span>
+        <input class="speed-val" id="val-fast" value="18s" readonly>
+      </label>
+      <input type="range" id="slider-fast" min="4" max="40" value="18">
+    </div>
+
+    <h3>► МӨР ТУТМЫН ХУРД — тус тусад нь тохируулах</h3>
+    <div class="row-speeds" id="row-speeds"></div>
+
+    <h3>► ТЕКСТ НЭМЭХ / УСТГАХ — мөр тус бүрд</h3>
+    <div id="row-texts"></div>
+
+    <div class="panel-footer">
+      <button class="btn-apply" id="btn-apply">▶ ХЭРЭГЛЭХ</button>
+      <button class="btn-close" id="btn-close">✕ ХААХ</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const TICKER_ROWS = [
+  { color:'cyan',    label:'MARKETS',  speed:'slow',   items:['AAPL ▲ 189.45','TSLA ▼ 214.30','NVDA ▲ 875.20','GOOG ▲ 171.88','AMZN ▲ 182.10','META ▲ 531.60','MSFT ▼ 418.23','BTC ▲ 67,420','ETH ▼ 3,541','SOL ▲ 182.44','XAU ▲ 2,341.80','OIL ▼ 78.34','USD/MNT ▼ 3,428','EUR/USD ▲ 1.0842','S&P500 ▲ 5,287'] },
+  { color:'green',   label:'NEWS',     speed:'medium', items:['BREAKING: Global summit on AI regulation opens in Geneva','Монгол улс: Улаанбаатарт шинэ метроны шугам нээлтээ хийлээ','MARS MISSION: Crew reports stable oxygen levels on day 47','FLASH: Central banks coordinate emergency rate decision','Дэлхийн хөгжлийн банк Монголд $400 сая зээл олгоно','QUANTUM BREAKTHROUGH: 1000-qubit processor goes live','Улаанбаатарын агаарын чанар: АЮУЛТАЙ түвшин — 312 AQI'] },
+  { color:'amber',   label:'WEATHER',  speed:'slow',   items:['УЛААНБААТАР -12°C ❄ ЦАС','МОСКВА -5°C 🌨','БЭЭЖИН 8°C 🌫','ТОКИО 18°C 🌤','ЛОНДОН 11°C 🌧','НЬЮ-ЙОРК 6°C ⛅','ДУБАЙ 34°C ☀','СИДНЕЙ 24°C 🌤','СИНГАПУР 31°C ⛈'] },
+  { color:'green',   label:'CRYPTO',   speed:'medium', items:['BTC ▲ $67,420 (+3.2%)','ETH ▼ $3,541 (-1.1%)','BNB ▲ $412 (+0.8%)','SOL ▲ $182 (+5.4%)','ADA ▼ $0.54 (-2.3%)','DOGE ▲ $0.18 (+12.1%)','XRP ▲ $0.61 (+1.7%)','TOTAL MARKET CAP: $2.41T'] },
+  { color:'magenta', label:'INTEL',    speed:'fast', featured:true, items:['⚡ LIVE: 1,204 nodes active across 47 datacenters','⚡ Монгол: Шинэ эрдэс баялгийн хэлэлцээр — $12B гэрээнд гарын үсэг зурлаа','⚡ SATELLITE UPLINK NOMINAL — LATENCY: 12ms','⚡ GLOBAL THREAT LEVEL: ELEVATED — MONITORING 847 VECTORS','⚡ AI INFERENCE: 2.3M requests/sec — 99.98% SLA'] },
+  { color:'cyan',    label:'SYSTEM',   speed:'slow',   items:['SYSTEM ONLINE','UPTIME: 99.97%','NODES: 1,204 ACTIVE','CPU: 34%','MEM: 61%','NET I/O: 2.3Gb/s','FIREWALL: ACTIVE — 23,441 THREATS BLOCKED','TLS 1.3 ENFORCED','BUILD: v4.7.2-stable'] },
+  { color:'green',   label:'COORDS',   speed:'medium', items:['47.8864°N 106.9057°E [UB-MAIN]','55.7558°N 37.6173°E [MSK-HUB]','35.6762°N 139.6503°E [TYO-NODE]','40.7128°N 74.0060°W [NYC-RELAY]','SECTOR 7G: CLEAR','SECTOR 12A: MONITORING'] },
+  { color:'amber',   label:'MN-NEWS',  speed:'slow',   items:['Монгол улсын ДНБ 2025 онд 6.8%-иар өслөө','Эрдэнэт үйлдвэр: 560,000 тонн зэс','УБ хотын замын ачаалал: ӨНДӨР — 45 минутын хоцролт','Монголбанк: Инфляц 8.4%','MIAT: Улаанбаатар–Токио шууд нислэг эхэллээ'] },
+  { color:'green',   label:'HASH',     speed:'medium', items:['SHA256: a3f8c2...d94e1b','0x7f3a9c12b4e8d501','TX: 9f2e1b...4d8c3a','BLOCK: #892,441','EPOCH: 1741492800','SEQ: 0xDEADBEEF','CERT EXPIRES: 2026-03-09'] },
+  { color:'red',     label:'ALERT',    speed:'medium', items:['⚠ GEOMAGNETIC STORM: G2 CLASS — 14:32 UTC','⚠ SOLAR WIND SPEED: 620 km/s — ELEVATED','⚠ Улаанбаатар: Хүчтэй салхины анхааруулга','⚠ INTRUSION ATTEMPT: 192.168.x.x — BLOCKED','⚠ EXCHANGE HALT: Circuit breaker triggered on XMEX'] },
+];
+
+let speeds = { slow:72, medium:42, fast:18 };
+const GLITCH = '▓░▒█▀▄◆◇■□●○◉×÷±∞≠≈∑⌥⏎⚡⚠▲▼◀▶';
+const trackEls = [];
+let paused = false;
+
+function buildAll() {
+  const screen = document.getElementById('screen');
+  screen.innerHTML = '';
+  trackEls.length = 0;
+  document.querySelectorAll('[id^="kf-"]').forEach(e => e.remove());
+
+  TICKER_ROWS.forEach((row, i) => {
+    const dur = speeds[row.speed] || 42;
+    const rowEl = document.createElement('div');
+    rowEl.className = 'ticker-row ' + row.color + (row.featured ? ' featured' : '');
+
+    const lbl = document.createElement('span');
+    lbl.className = 'row-label';
+    lbl.textContent = row.label;
+    rowEl.appendChild(lbl);
+
+    const track = document.createElement('div');
+    track.className = 'ticker-track';
+    const sep = '<span class="sep"> ◆ </span>';
+    const html = row.items.map(t => `<span class="ticker-item">${t}</span>${sep}`).join('');
+    track.innerHTML = html+html+html+html;
+
+    const s = document.createElement('style');
+    s.id = `kf-${i}`;
+    s.textContent = `@keyframes scroll-${i}{from{transform:translateX(0)}to{transform:translateX(-50%)}}`;
+    document.head.appendChild(s);
+    track.style.animation = `scroll-${i} ${dur}s linear infinite`;
+
+    rowEl.appendChild(track);
+    screen.appendChild(rowEl);
+    trackEls.push(track);
+  });
+
+  fitFonts();
+  if (paused) document.body.classList.add('paused');
+}
+
+function fitFonts() {
+  document.querySelectorAll('.ticker-row').forEach(r => {
+    const size = Math.min(Math.max(r.offsetHeight * 0.52, 13), 30);
+    r.querySelectorAll('.ticker-track').forEach(t => t.style.fontSize = size+'px');
+  });
+}
+window.addEventListener('resize', fitFonts);
+
+// Clock
+const DAYS=['SUN','MON','TUE','WED','THU','FRI','SAT'];
+const MONTHS=['JAN','FEB','MAR','APR','MAY','JUN','JUL','AUG','SEP','OCT','NOV','DEC'];
+function tick() {
+  const n = new Date();
+  document.getElementById('time-display').textContent =
+    [n.getHours(),n.getMinutes(),n.getSeconds()].map(x=>String(x).padStart(2,'0')).join(':');
+  document.getElementById('date-display').textContent =
+    `${DAYS[n.getDay()]} ${String(n.getDate()).padStart(2,'0')} ${MONTHS[n.getMonth()]} ${n.getFullYear()}`;
+}
+tick(); setInterval(tick, 1000);
+
+// Pause on screen click
+const pauseInd = document.getElementById('pause-indicator');
+document.getElementById('screen').addEventListener('click', () => {
+  paused = !paused;
+  document.body.classList.toggle('paused', paused);
+  pauseInd.classList.toggle('visible', paused);
+  if (!paused) setTimeout(() => pauseInd.classList.remove('visible'), 600);
+});
+
+// Glitch
+function glitch() {
+  if (paused || !trackEls.length) return;
+  const track = trackEls[Math.floor(Math.random()*trackEls.length)];
+  const items = track.querySelectorAll('.ticker-item');
+  if (!items.length) return;
+  const item = items[Math.floor(Math.random()*items.length)];
+  const txt = item.textContent;
+  if (txt.length < 3) return;
+  let c = txt.split('');
+  for (let i=0;i<Math.floor(Math.random()*3)+1;i++) {
+    c[Math.floor(Math.random()*c.length)] =
+      `<span class="glitch-char">${GLITCH[Math.floor(Math.random()*GLITCH.length)]}</span>`;
+  }
+  item.innerHTML = c.join('');
+  setTimeout(() => { item.textContent = txt; }, 120);
+}
+(function schedGlitch(){ setTimeout(()=>{ glitch(); schedGlitch(); }, 800+Math.random()*2400); })();
+
+// ── PANEL ──
+const overlay = document.getElementById('panel-overlay');
+
+document.getElementById('settings-btn').addEventListener('click', e => {
+  e.stopPropagation();
+  syncSliders();
+  buildPanelRows();
+  overlay.classList.add('open');
+});
+document.getElementById('btn-close').addEventListener('click', () => overlay.classList.remove('open'));
+overlay.addEventListener('click', e => { if (e.target===overlay) overlay.classList.remove('open'); });
+
+function syncSliders() {
+  ['slow','medium','fast'].forEach(k => {
+    document.getElementById('slider-'+k).value = speeds[k];
+    document.getElementById('val-'+k).value = speeds[k]+'s';
+  });
+}
+['slow','medium','fast'].forEach(k => {
+  const sl = document.getElementById('slider-'+k);
+  const vl = document.getElementById('val-'+k);
+  sl.addEventListener('input', () => { speeds[k]=+sl.value; vl.value=sl.value+'s'; });
+});
+
+function colorOf(c) { return {cyan:'#0ff',green:'#0f4',magenta:'#f0f',amber:'#fb0',red:'#f33'}[c]||'#0f4'; }
+
+function buildPanelRows() {
+  // Per-row speed
+  const rc = document.getElementById('row-speeds');
+  rc.innerHTML = '';
+  TICKER_ROWS.forEach((row, i) => {
+    const div = document.createElement('div');
+    div.className = 'row-speed-item';
+    const sp = document.createElement('span');
+    sp.style.color = colorOf(row.color);
+    sp.textContent = `[ ${row.label} ]`;
+    const sel = document.createElement('select');
+    sel.className = 'speed-select';
+    [['slow','🐢 УДААН'],['medium','⚡ ДУНД'],['fast','🔥 ХУРДАН']].forEach(([v,t]) => {
+      const o = document.createElement('option');
+      o.value=v; o.textContent=t; if(v===row.speed) o.selected=true;
+      sel.appendChild(o);
+    });
+    sel.addEventListener('change', () => { TICKER_ROWS[i].speed = sel.value; });
+    div.appendChild(sp); div.appendChild(sel); rc.appendChild(div);
+  });
+
+  // Text editor
+  const tc = document.getElementById('row-texts');
+  tc.innerHTML = '';
+  TICKER_ROWS.forEach((row, i) => {
+    const block = document.createElement('div');
+    block.className = 'row-text-item';
+
+    const title = document.createElement('div');
+    title.className = 'row-title';
+    title.style.color = colorOf(row.color);
+    title.textContent = `[ ${row.label} ]`;
+    block.appendChild(title);
+
+    const tagList = document.createElement('div');
+    tagList.className = 'tag-list';
+
+    const renderTags = () => {
+      tagList.innerHTML = '';
+      TICKER_ROWS[i].items.forEach((item, j) => {
+        const tag = document.createElement('div');
+        tag.className = 'tag';
+        tag.innerHTML = `<span>${item}</span><span class="tag-del" title="Устгах">✕</span>`;
+        tag.querySelector('.tag-del').addEventListener('click', () => {
+          TICKER_ROWS[i].items.splice(j, 1);
+          renderTags();
+        });
+        tagList.appendChild(tag);
+      });
+    };
+    renderTags();
+
+    const inputRow = document.createElement('div');
+    inputRow.className = 'text-input-row';
+    const inp = document.createElement('input');
+    inp.type = 'text';
+    inp.placeholder = 'Шинэ текст оруулах... Enter эсвэл + НЭМЭХ';
+    const btn = document.createElement('button');
+    btn.className = 'btn-add';
+    btn.textContent = '+ НЭМЭХ';
+
+    const add = () => {
+      const v = inp.value.trim();
+      if (!v) return;
+      TICKER_ROWS[i].items.push(v);
+      inp.value = '';
+      renderTags();
+    };
+    btn.addEventListener('click', add);
+    inp.addEventListener('keydown', e => { if (e.key==='Enter') add(); });
+
+    inputRow.appendChild(inp); inputRow.appendChild(btn);
+    block.appendChild(tagList); block.appendChild(inputRow);
+    tc.appendChild(block);
+  });
+}
+
+document.getElementById('btn-apply').addEventListener('click', () => {
+  overlay.classList.remove('open');
+  buildAll();
+});
+
+buildAll();
+</script>
+</body>
+</html>
